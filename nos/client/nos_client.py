@@ -1,4 +1,6 @@
 # -*- coding:utf8 -*-
+import os
+from math import ceil
 
 from .utils import (HTTP_METHOD, HTTP_HEADER, RETURN_KEY)
 from ..exceptions import (XmlParseError, MultiObjectDeleteException,
@@ -21,6 +23,44 @@ def parse_xml(status, headers, body):
             ),
             e
         )
+
+
+def _get_file_object_remaining_bytes(fileobj):
+    current = fileobj.tell()
+
+    fileobj.seek(0, os.SEEK_END)
+    end = fileobj.tell()
+    fileobj.seek(current, os.SEEK_SET)
+
+    return end - current
+
+
+def _get_data_size(data):
+
+    if hasattr(data, '__len__'):
+        return len(data)
+
+    if hasattr(data, 'len'):
+        return data.len
+
+    if hasattr(data, 'seek') and hasattr(data, 'tell'):
+        return _get_file_object_remaining_bytes(data)
+
+def get_optimal_part_size(object_size):
+    if object_size is None:
+        return None
+
+    min_upload_part_size = 1024 * 1024
+    max_upload_part_size = 100 * 1024 * 1024
+
+    optimal_part_size = ceil(object_size / 10000.0)
+    if optimal_part_size > max_upload_part_size:
+        return max_upload_part_size
+
+    if optimal_part_size < min_upload_part_size:
+        return min_upload_part_size
+
+    return optimal_part_size
 
 
 class Client(object):
@@ -485,6 +525,9 @@ class Client(object):
         :arg info(list): The list of part numbers and ETags to use when
           completing the multipart upload.
         :arg kwargs: Other optional parameters.
+            :opt_arg meta_data(dict): Represents the object metadata that is
+              stored with Nos. This includes custom user-supplied metadata and
+              the key should start with 'x-nos-meta-'.
             :opt_arg object_md5(string): MD5 of the whole object which is
               multipart uploaded.
         :ret return_value(dict): The response of NOS server.
@@ -498,6 +541,9 @@ class Client(object):
         headers = {}
         if 'object_md5' in kwargs:
             headers[HTTP_HEADER.X_NOS_OBJECT_MD5] = kwargs['object_md5']
+
+        for k, v in kwargs.get('meta_data', {}).items():
+            headers[k] = v
 
         parts_xml = []
         part_xml = '<Part><PartNumber>%s</PartNumber><ETag>%s</ETag></Part>'
@@ -636,3 +682,95 @@ class Client(object):
         return '<Delete><Quiet>%s</Quiet>%s</Delete>' % (
             str(quiet).lower(), ''.join(objs)
         )
+
+    def multipart_upload(self, bucket, key, body, **kwargs):
+        """
+        Upload object with multipart_upload.
+
+        :arg bucket(string): The name of the Nos bucket.
+        :arg key(string): The name of the Nos object.
+        :arg body(serializable_object): The content of the Nos object, which can
+          be file, dict, list, string or any other serializable object.
+        :arg kwargs: Other optional parameters.
+            :opt_arg meta_data(dict): Represents the object metadata that is
+              stored with Nos. This includes custom user-supplied metadata and
+              the key should start with 'x-nos-meta-'.
+            :opt_arg object_size(integer): The size of the whole object.
+            :opt_arg slice_size(integer): The size of each part.
+            :opt_arg progress_callback(integer, integer): The progress callback,
+              the first param is uploaded_bytes, the second is total_bytes.
+        :raise ClientException: If any errors are occurred in the client point.
+        :raise ServiceException: If any errors occurred in NOS server point.
+        """
+        upload_id = None
+        try:
+            # step 1. init a multipart upload, and get the uploadId
+            meta_data = kwargs.get('meta_data', {})
+            result = self.create_multipart_upload(bucket, key, meta_data=meta_data)
+            upload_id = result["response"].find("UploadId").text
+
+            # step 2. upload parts
+            index = 0
+            object_size = kwargs.get('object_size', _get_data_size(body))
+            slice_size = get_optimal_part_size(object_size)
+            if slice_size is None:
+                slice_size = 1024 * 1024
+
+            progress_callback = kwargs.get('progress_callback', None)
+
+            total_bytes = object_size
+            uploaded_bytes = 0
+            while True:
+                index += 1
+                part = body.read(slice_size)
+                if not part:
+                    break
+                self.upload_part(bucket, key, index, upload_id, part)
+                uploaded_bytes += len(part)
+                if progress_callback is not None:
+                    progress_callback(uploaded_bytes, total_bytes)
+
+            # step 3. list all upload parts, and complete multipart upload
+            parts = self.list_parts(bucket, key, upload_id)["response"]
+            part_etags = []
+            for k in parts.findall("Part"):
+                part_etags.append({"part_num": k.find("PartNumber").text, "etag": k.find("ETag").text})
+
+            self.complete_multipart_upload(bucket, key, upload_id, part_etags, meta_data=meta_data)
+        except Exception as e:
+            if upload_id is not None:
+                # abort multipart_upload when errors occurred
+                self.abort_multipart_upload(bucket, key, upload_id)
+            raise e
+
+
+    def upload(self, bucket, key, body, **kwargs):
+        """
+        Upload object.
+
+        :arg bucket(string): The name of the Nos bucket.
+        :arg key(string): The name of the Nos object.
+        :arg body(serializable_object): The content of the Nos object, which can
+          be file, dict, list, string or any other serializable object.
+        :arg kwargs: Other optional parameters.
+            :opt_arg meta_data(dict): Represents the object metadata that is
+              stored with Nos. This includes custom user-supplied metadata and
+              the key should start with 'x-nos-meta-'.
+            :opt_arg multipart_upload_threshold(integer): Object with size larger will be
+              uploaded with multipart upload
+            :opt_arg slice_size(integer): The size of each part when using multipart upload.
+            :opt_arg progress_callback(integer, integer): The progress callback,
+              the first param is uploaded_bytes, the second is total_bytes.
+        :raise ClientException: If any errors are occurred in the client point.
+        :raise ServiceException: If any errors occurred in NOS server point.
+        """
+        multipart_upload_threshold = kwargs.get('multipart_upload_threshold', 100 * 1024 * 1024)
+        object_size = _get_data_size(body)
+        kwargs['object_size'] = object_size
+        if (object_size is not None) and (object_size < multipart_upload_threshold):
+            self.put_object(bucket, key, body, **kwargs)
+            progress_callback = kwargs.get('progress_callback', None)
+            if progress_callback is not None:
+                progress_callback(object_size, object_size)
+        else:
+            self.multipart_upload(bucket, key, body, **kwargs)

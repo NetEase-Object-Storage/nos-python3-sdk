@@ -17,6 +17,7 @@ NOS Python SDK实现了NOS对象操作接口，基于此SDK能方便快速地实
 * Put Object —— 上传一个对象
 * Put Object - Copy —— 拷贝一个对象
 * Put Object - Move —— 桶内部move一个对象
+* Upload —— 上传一个对象，根据文件大小选择使用Put Object或分块上传
 
 大对象分块操作接口
 ^^^^^^^^^^^^^^^^^^
@@ -27,6 +28,7 @@ NOS Python SDK实现了NOS对象操作接口，基于此SDK能方便快速地实
 * Abort Multipart Upload —— 取消分块上传并删除已上传的分块
 * List Parts —— 列出已上传的分块
 * List Multipart Uploads —— 列出所有执行中的分块上传事件
+* Multipart Upload —— 整合上述分块操作接口，分块上传对象
 
 接口实现
 --------
@@ -625,6 +627,36 @@ Move Object
 * x_nos_request_id(string) -- 唯一定位一个请求的ID号。
 
 
+Upload
+::::::::::
+
+使用举例
+
+::
+
+    try:
+        client.upload(
+            bucket="string",
+            key="string",
+            body=serializable_object,
+            progress_callback=lambda x, y: {
+                print('upload progress, uploaded_bytes:', x, ', total_bytes:', y)
+            }
+        )
+    except Exception as e:
+        logging.exception(e)
+
+参数说明
+
+* bucket(string) -- 桶名。
+* key(string) -- 对象名。
+* body(serializable_object) -- 对象内容，可以是文件句柄、字符串、字典等任何可序列化的对象。
+* kwargs -- 其他可选参数。
+    * meta_data(dict) -- 用户自定义的元数据，通过键值对的形式上报，键名和值均为字符串，且键名需以\`x-nos-meta-\`开头。
+    * multipart_upload_threshold(integer): 对象大小大于等于该值时，使用分块上传；小于该值时，使用Put Object。
+    * slice_size(integer): 在使用分块上传时，每个分块的大小。
+    * progress_callback(integer, integer): 上传进度回调函数，第一个参数是已经上传的文件大小（单位：byte），第二个参数是对象的总大小（单位：byte）。
+
 Initiate Multipart Upload
 :::::::::::::::::::::::::
 
@@ -1136,3 +1168,32 @@ List Multipart Uploads
 
 * x_nos_request_id(string) -- 唯一定位一个请求的ID号。
 * response(xml.etree.ElementTree) -- 包含返回信息的xml对象。
+
+Multipart Upload
+::::::::::
+
+使用举例
+
+::
+
+    try:
+        client.multipart_upload(
+            bucket="string",
+            key="string",
+            body=serializable_object,
+            progress_callback=lambda x, y: {
+                print('upload progress, uploaded_bytes:', x, ', total_bytes:', y)
+            }
+        )
+    except Exception as e:
+        logging.exception(e)
+
+参数说明
+
+* bucket(string) -- 桶名。
+* key(string) -- 对象名。
+* body(serializable_object) -- 对象内容，可以是文件句柄、字符串、字典等任何可序列化的对象。
+* kwargs -- 其他可选参数。
+    * meta_data(dict) -- 用户自定义的元数据，通过键值对的形式上报，键名和值均为字符串，且键名需以\`x-nos-meta-\`开头。
+    * slice_size(integer): 分块大小。
+    * progress_callback(integer, integer): 上传进度回调函数，第一个参数是已经上传的文件大小（单位：byte），第二个参数是对象的总大小（单位：byte）。
