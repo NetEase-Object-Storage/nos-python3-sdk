@@ -1,5 +1,5 @@
 ﻿NOS Python SDK
-==============
+============================
 
 NOS Python SDK实现了NOS对象操作接口，基于此SDK能方便快速地实现Python应用程序来使用NOS的对象存储服务。
 
@@ -641,7 +641,8 @@ Upload
             body=serializable_object,
             progress_callback=lambda x, y: {
                 print('upload progress, uploaded_bytes:', x, ', total_bytes:', y)
-            }
+            },
+            **kwargs
         )
     except Exception as e:
         logging.exception(e)
@@ -653,8 +654,8 @@ Upload
 * body(serializable_object) -- 对象内容，可以是文件句柄、字符串、字典等任何可序列化的对象。
 * kwargs -- 其他可选参数。
     * meta_data(dict) -- 用户自定义的元数据，通过键值对的形式上报，键名和值均为字符串，且键名需以\`x-nos-meta-\`开头。
-    * multipart_upload_threshold(integer): 对象大小大于等于该值时，使用分块上传；小于该值时，使用Put Object。
-    * slice_size(integer): 在使用分块上传时，每个分块的大小。
+    * multipart_upload_threshold(integer): 对象大小大于等于该值时，使用分块上传；小于该值时，使用Put Object。默认为100MB。
+    * slice_size(integer): 在使用分块上传时，每个分块的大小。默认会按照文件大小自动调整。
     * progress_callback(integer, integer): 上传进度回调函数，第一个参数是已经上传的文件大小（单位：byte），第二个参数是对象的总大小（单位：byte）。
 
 Initiate Multipart Upload
@@ -1170,7 +1171,7 @@ List Multipart Uploads
 * response(xml.etree.ElementTree) -- 包含返回信息的xml对象。
 
 Multipart Upload
-::::::::::
+::::::::::::::::
 
 使用举例
 
@@ -1183,7 +1184,8 @@ Multipart Upload
             body=serializable_object,
             progress_callback=lambda x, y: {
                 print('upload progress, uploaded_bytes:', x, ', total_bytes:', y)
-            }
+            },
+            **kwargs
         )
     except Exception as e:
         logging.exception(e)
@@ -1195,5 +1197,5 @@ Multipart Upload
 * body(serializable_object) -- 对象内容，可以是文件句柄、字符串、字典等任何可序列化的对象。
 * kwargs -- 其他可选参数。
     * meta_data(dict) -- 用户自定义的元数据，通过键值对的形式上报，键名和值均为字符串，且键名需以\`x-nos-meta-\`开头。
-    * slice_size(integer): 分块大小。
+    * slice_size(integer): 分块大小，默认根据文件大小自动调整。
     * progress_callback(integer, integer): 上传进度回调函数，第一个参数是已经上传的文件大小（单位：byte），第二个参数是对象的总大小（单位：byte）。
