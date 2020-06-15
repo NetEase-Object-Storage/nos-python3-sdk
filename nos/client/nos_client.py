@@ -758,6 +758,7 @@ class Client(object):
               the key should start with 'x-nos-meta-'.
             :opt_arg multipart_upload_threshold(integer): Object with size larger will be
               uploaded with multipart upload
+            :opt_arg object_size(integer): The size of the whole object.
             :opt_arg slice_size(integer): The size of each part when using multipart upload.
             :opt_arg progress_callback(integer, integer): The progress callback,
               the first param is uploaded_bytes, the second is total_bytes.
@@ -765,7 +766,7 @@ class Client(object):
         :raise ServiceException: If any errors occurred in NOS server point.
         """
         multipart_upload_threshold = kwargs.get('multipart_upload_threshold', 100 * 1024 * 1024)
-        object_size = _get_data_size(body)
+        object_size = kwargs.get('object_size', _get_data_size(body))
         kwargs['object_size'] = object_size
         if (object_size is not None) and (object_size < multipart_upload_threshold):
             self.put_object(bucket, key, body, **kwargs)
